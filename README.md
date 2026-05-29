@@ -48,6 +48,37 @@
 
 支持 Chrome / Edge / 360 / QQ 等 Chromium 内核浏览器
 
+### 从 sunnysabor fork 安装 CSDN 公开发布版
+
+如果需要 CSDN 显式公开发布能力（`wechatsync sync article.md -p csdn --publish`），使用本 fork 的 `v2` 分支源码构建本地扩展和 CLI：
+
+```bash
+git clone git@github.com:sunnysabor/Wechatsync.git
+cd Wechatsync
+git switch v2
+COREPACK_ENABLE_PROJECT_SPEC=0 pnpm install --no-frozen-lockfile --ignore-scripts
+COREPACK_ENABLE_PROJECT_SPEC=0 pnpm --filter @wechatsync/core build
+COREPACK_ENABLE_PROJECT_SPEC=0 pnpm --filter @wechatsync/mcp-server build
+COREPACK_ENABLE_PROJECT_SPEC=0 pnpm --filter @wechatsync/cli build
+COREPACK_ENABLE_PROJECT_SPEC=0 pnpm --filter @wechatsync/extension build
+```
+
+然后在 Chrome 打开 `chrome://extensions`：
+
+1. 开启“开发者模式”。
+2. 点击“加载已解压的扩展程序”。
+3. 选择 `packages/extension/dist`。
+4. 打开扩展设置，启用 MCP/CLI 连接并生成 Token。
+5. 浏览器登录 CSDN，确认账号已完成实名、手机号、安全验证等平台要求。
+
+CLI 可直接使用本地构建产物：
+
+```bash
+/path/to/Wechatsync/packages/cli/dist/index.js sync article.md -p csdn --publish
+```
+
+公开发布成功应返回 `https://blog.csdn.net/.../article/details/...` 正文 URL；如果返回 `(草稿)` 或 `https://editor.csdn.net/md?articleId=...`，说明当前连接的扩展仍未使用本地构建版，不能视为公开发布成功。
+
 
 ## 支持 29+ 主流平台
 
