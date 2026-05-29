@@ -289,8 +289,12 @@ interface ParsedContent {
   format: 'markdown' | 'html'
   /** 从 HTML meta 提取的封面图 */
   cover?: string
-  /** 从 HTML meta 提取的摘要 */
+  /** 从 HTML meta 或 Markdown front matter 提取的摘要 */
   summary?: string
+  /** 从 Markdown front matter 提取的标签 */
+  tags?: string[]
+  /** 从 Markdown front matter 提取的分类 */
+  category?: string
 }
 
 /**
@@ -323,11 +327,32 @@ function parseMarkdown(content: string): ParsedContent {
 
   // 1. 尝试从 YAML front matter 提取
   const yamlMatch = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
+  let summary: string | undefined
+  let category: string | undefined
+  let tags: string[] | undefined
+
   if (yamlMatch) {
     const frontMatter = yamlMatch[1]
     const titleMatch = frontMatter.match(/^title:\s*["']?(.+?)["']?\s*$/m)
     if (titleMatch) {
       title = titleMatch[1].trim()
+    }
+    const summaryMatch = frontMatter.match(/^(?:summary|description|Description):\s*["']?(.+?)["']?\s*$/m)
+    if (summaryMatch) {
+      summary = summaryMatch[1].trim()
+    }
+    const categoryMatch = frontMatter.match(/^category:\s*["']?(.+?)["']?\s*$/m)
+    if (categoryMatch) {
+      category = categoryMatch[1].trim()
+    }
+    const tagsMatch = frontMatter.match(/^tags:\s*(.+?)\s*$/m)
+    if (tagsMatch) {
+      tags = tagsMatch[1]
+        .replace(/^\[/, '')
+        .replace(/\]$/, '')
+        .split(',')
+        .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean)
     }
     // 移除 front matter
     body = content.slice(yamlMatch[0].length)
@@ -355,6 +380,9 @@ function parseMarkdown(content: string): ParsedContent {
     title,
     content: body,
     format: 'markdown',
+    summary,
+    tags,
+    category,
   }
 }
 
@@ -632,6 +660,7 @@ program
   .option('-p, --platforms <platforms>', '目标平台，逗号分隔', 'zhihu,juejin')
   .option('-t, --title <title>', '文章标题（默认从文件提取）')
   .option('--cover <url>', '封面图 URL 或本地路径')
+  .option('--publish', '公开发布（当前仅支持 CSDN；默认只保存草稿）')
   .option('--dry-run', '仅显示将要执行的操作，不实际同步')
   .action(async (file: string, options) => {
     // 检查文件是否存在
@@ -676,6 +705,10 @@ program
     }
 
     const platforms = options.platforms.split(',').map((p: string) => p.trim().toLowerCase())
+    if (options.publish && !(platforms.length === 1 && platforms[0] === 'csdn')) {
+      console.error(chalk.red('--publish 当前仅支持单平台 CSDN，请使用: -p csdn --publish'))
+      process.exit(1)
+    }
 
     // 准备内容
     const markdown = parsed.format === 'markdown' ? parsed.content : undefined
@@ -687,6 +720,7 @@ program
     console.log(`  标题: ${chalk.cyan(title)}`)
     console.log(`  格式: ${chalk.cyan(parsed.format)}${parsed.format === 'html' ? chalk.green(' (保留原始排版)') : ''}`)
     console.log(`  平台: ${chalk.cyan(platforms.join(', '))}`)
+    console.log(`  模式: ${options.publish ? chalk.red('公开发布') : chalk.gray('保存草稿')}`)
     console.log(`  内容: ${chalk.gray(parsed.content.length + ' 字符')}`)
     if (cover) {
       console.log(`  封面: ${chalk.cyan(cover.startsWith('data:') ? '(本地图片)' : cover)}`)
@@ -746,11 +780,15 @@ program
     try {
       const response = await bridge.request<{ results: SyncResult[]; syncId: string }>('syncArticle', {
         platforms,
+        draftOnly: !options.publish,
         article: {
           title,
           markdown: processedMarkdown,
           content: processedHtml,
           cover,
+          summary: parsed.summary,
+          tags: parsed.tags,
+          category: parsed.category,
         },
       })
 

@@ -208,6 +208,14 @@ export class CSDNAdapter extends CodeAdapter {
       // Get HTML content (CSDN API needs both markdown and HTML)
       const htmlContent = article.html || ''
 
+      const draftOnly = options?.draftOnly ?? true
+      const articleTags = article.tags?.filter(Boolean).join(',') || '技术博客'
+      const articleCategory = article.category || ''
+
+      if (!draftOnly) {
+        await this.runPublishPreflight(article.title, markdown, htmlContent)
+      }
+
       // Generate signature and save article
       const apiPath = '/blog-console-api/v3/mdeditor/saveArticle'
       const headers = await this.signRequest(apiPath)
@@ -224,12 +232,13 @@ export class CSDNAdapter extends CodeAdapter {
             content: htmlContent,
             readType: 'public',
             level: 0,
-            tags: '',
-            status: 2, // 草稿
-            categories: '',
+            tags: articleTags,
+            status: draftOnly ? 2 : 0,
+            categories: articleCategory,
             type: 'original',
             original_link: '',
             authorized_status: false,
+            Description: article.summary || '',
             not_auto_saved: '1',
             source: 'pc_mdeditor',
             cover_images: [],
@@ -237,7 +246,8 @@ export class CSDNAdapter extends CodeAdapter {
             is_new: 1,
             vote_id: 0,
             resource_id: '',
-            pubStatus: 'draft',
+            pubStatus: draftOnly ? 'draft' : 'publish',
+            creation_statement: 0,
             creator_activity_id: '',
           }),
         }
@@ -247,26 +257,72 @@ export class CSDNAdapter extends CodeAdapter {
         code: number
         message?: string
         msg?: string
-        data?: { id: string }
+        data?: { id: string; url?: string }
       }
 
       logger.debug('Save response:', res)
 
       if (res.code !== 200 || !res.data?.id) {
-        throw new Error(res.msg || res.message || '保存草稿失败')
+        throw new Error(res.msg || res.message || (draftOnly ? '保存草稿失败' : '公开发布失败'))
       }
 
       const postId = res.data.id
-      const draftUrl = `https://editor.csdn.net/md?articleId=${postId}`
+      const postUrl = draftOnly
+        ? `https://editor.csdn.net/md?articleId=${postId}`
+        : res.data.url || `https://blog.csdn.net/${this.userInfo?.csdnid}/article/details/${postId}`
 
       return this.createResult(true, {
         postId: postId,
-        postUrl: draftUrl,
-        draftOnly: options?.draftOnly ?? true,
+        postUrl,
+        draftOnly,
       })
     }).catch((error) => this.createResult(false, {
       error: (error as Error).message,
     }))
+  }
+
+  private async runPublishPreflight(title: string, markdown: string, htmlContent: string): Promise<void> {
+    await this.postCsdnJson('/blog/phoenix/console/v1/article/get-quality-score', {
+      articleId: 0,
+      title,
+      content: htmlContent,
+    })
+
+    if (this.userInfo?.csdnid) {
+      const risk = await this.postCsdnJson('/v1/api/user/risk/check', {
+        username: this.userInfo.csdnid,
+        biz: 'blog',
+        subBiz: 'article',
+      }, 'https://passport.csdn.net') as { code?: string; status?: boolean; message?: string }
+
+      if (risk.code && risk.code !== '200') {
+        throw new Error(risk.message || 'CSDN 发布风控检查未通过')
+      }
+    }
+
+    await this.postCsdnJson('/blog/phoenix/console/v1/article/check-images', {
+      content: htmlContent || markdown,
+    })
+  }
+
+  private async postCsdnJson(apiPath: string, body: Record<string, unknown>, origin = 'https://bizapi.csdn.net'): Promise<unknown> {
+    const headers = origin.includes('bizapi.csdn.net')
+      ? await this.signRequest(apiPath)
+      : { 'content-type': 'application/json' }
+
+    const response = await this.runtime.fetch(`${origin}${apiPath}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+    const res = await response.json() as { code?: number | string; message?: string; msg?: string }
+    const ok = res.code === 200 || res.code === '200'
+    if (!ok) {
+      throw new Error(res.msg || res.message || `CSDN API failed: ${apiPath}`)
+    }
+    return res
   }
 
   /**

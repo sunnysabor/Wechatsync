@@ -171,17 +171,26 @@ function createServer(): Server {
           })
           break
 
-        case 'sync_article':
+        case 'sync_article': {
+          const syncArgs = args as { platforms: string[]; draftOnly?: boolean }
+          if (syncArgs.draftOnly === false && !(syncArgs.platforms?.length === 1 && syncArgs.platforms[0] === 'csdn')) {
+            throw new Error('draftOnly=false 当前仅支持单平台 CSDN')
+          }
           result = await bridge.request<SyncResult[]>('syncArticle', {
-            platforms: (args as { platforms: string[] }).platforms,
+            platforms: syncArgs.platforms,
+            draftOnly: syncArgs.draftOnly ?? true,
             article: {
               title: (args as { title: string }).title,
               content: (args as { content: string }).content,
               markdown: (args as { markdown?: string }).markdown,
               cover: (args as { cover?: string }).cover,
+              summary: (args as { summary?: string }).summary,
+              tags: (args as { tags?: string[] }).tags,
+              category: (args as { category?: string }).category,
             },
           })
           break
+        }
 
         case 'extract_article':
           result = await bridge.request('extractArticle')

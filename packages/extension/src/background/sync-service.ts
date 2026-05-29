@@ -40,6 +40,9 @@ interface ActiveSyncState {
     content?: string
     html?: string
     markdown?: string
+    summary?: string
+    tags?: string[]
+    category?: string
   } | null
   selectedPlatforms: string[]
   results: SyncResult[]
@@ -62,6 +65,7 @@ interface SyncHistoryItem {
 interface SyncOptions {
   skipHistory?: boolean
   source?: string
+  draftOnly?: boolean
 }
 
 // 进度回调
@@ -228,12 +232,15 @@ export async function performSync(
     html?: string
     markdown?: string
     cover?: string
+    summary?: string
+    tags?: string[]
+    category?: string
   },
   platforms: string[],
   options: SyncOptions = {},
   callbacks: SyncProgressCallbacks = {}
 ): Promise<{ results: SyncResult[]; syncId: string }> {
-  const { skipHistory = false, source = 'mcp' } = options
+  const { skipHistory = false, source = 'mcp', draftOnly = true } = options
   const { onResult, onImageProgress, onDetailProgress } = callbacks
 
   const allPlatformMetas = getAllPlatformMetas()
@@ -247,6 +254,9 @@ export async function performSync(
     html: article.html || article.content || '',
     markdown: article.markdown || '',
     cover: article.cover,
+    summary: article.summary,
+    tags: article.tags,
+    category: article.category,
   }
 
   // 获取 CMS 账户信息以区分 DSL 和 CMS
@@ -268,6 +278,9 @@ export async function performSync(
       content: normalizedArticle.content,
       html: normalizedArticle.html,
       markdown: normalizedArticle.markdown,
+      summary: normalizedArticle.summary,
+      tags: normalizedArticle.tags,
+      category: normalizedArticle.category,
     },
     selectedPlatforms: platforms,
     results: [],
@@ -328,7 +341,7 @@ export async function performSync(
       onDetailProgress: (progress: SyncDetailProgress) => {
         onDetailProgress?.(progress)
       },
-    }, source)
+    }, source, { draftOnly })
   }
 
   // 同步到 CMS 账户
@@ -377,13 +390,13 @@ export async function performSync(
 
       switch (account.type) {
         case 'wordpress':
-          result = await wordpressAdapter.publish(credentials, normalizedArticle, { draftOnly: true })
+          result = await wordpressAdapter.publish(credentials, normalizedArticle, { draftOnly })
           break
         case 'typecho':
-          result = await metaweblogAdapter.publishToTypecho(credentials, normalizedArticle, { draftOnly: true })
+          result = await metaweblogAdapter.publishToTypecho(credentials, normalizedArticle, { draftOnly })
           break
         case 'metaweblog':
-          result = await metaweblogAdapter.publish(credentials, normalizedArticle, { draftOnly: true })
+          result = await metaweblogAdapter.publish(credentials, normalizedArticle, { draftOnly })
           break
         default:
           result = { success: false, error: '不支持的 CMS 类型' }
@@ -394,7 +407,7 @@ export async function performSync(
         platformName: account.name,
         success: result.success,
         postUrl: result.postUrl,
-        draftOnly: true,
+        draftOnly,
         message: result.message,
         error: result.error,
       }

@@ -329,9 +329,16 @@ class McpClient {
           content?: string
           markdown?: string
           cover?: string
+          summary?: string
+          tags?: string[]
+          category?: string
         }
+        const draftOnly = (params?.draftOnly as boolean | undefined) ?? true
 
         if (!platforms?.length) throw new Error('Missing platforms parameter')
+        if (!draftOnly && !(platforms.length === 1 && platforms[0] === 'csdn')) {
+          throw new Error('draftOnly=false 当前仅支持单平台 CSDN')
+        }
         if (!articleData?.title) throw new Error('Missing article title')
         if (!articleData?.markdown && !articleData?.content) {
           throw new Error('Missing article content (markdown or content required)')
@@ -357,13 +364,16 @@ class McpClient {
           html: htmlContent,
           markdown: markdown,
           cover: articleData.cover,
+          summary: articleData.summary,
+          tags: articleData.tags,
+          category: articleData.category,
         }
 
         // 使用 sync-service 进行同步（支持 DSL 平台 + CMS 账户、历史记录、状态保存）
         const { results, syncId } = await performSync(
           article,
           platforms,
-          { source: 'mcp' }
+          { source: 'mcp', draftOnly }
         )
 
         return { results, syncId }
